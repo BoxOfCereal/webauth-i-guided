@@ -1,9 +1,12 @@
-const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
+const express = require("express");
+const helmet = require("helmet");
+const cors = require("cors");
+const bcrypt = require("bcryptjs");
 
-const db = require('./database/dbConfig.js');
-const Users = require('./users/users-model.js');
+const session = require("express-session");
+
+const db = require("./database/dbConfig.js");
+const Users = require("./users/users-model.js");
 
 const server = express();
 
@@ -11,12 +14,17 @@ server.use(helmet());
 server.use(express.json());
 server.use(cors());
 
-server.get('/', (req, res) => {
+server.get("/", (req, res) => {
   res.send("It's alive!");
 });
 
-server.post('/api/register', (req, res) => {
+server.post("/api/register", (req, res) => {
   let user = req.body;
+  //1 hash pass
+  const hash = bcrypt.hashSync(user.password, 10);
+  //2 replace pw with hash
+  user.password = hash;
+  console.log(`user`, user);
 
   Users.add(user)
     .then(saved => {
@@ -27,16 +35,17 @@ server.post('/api/register', (req, res) => {
     });
 });
 
-server.post('/api/login', (req, res) => {
+server.post("/api/login", (req, res) => {
   let { username, password } = req.body;
 
   Users.findBy({ username })
     .first()
     .then(user => {
-      if (user) {
+      //password,hash
+      if (user && bcrypt.compareSync(password, user.password)) {
         res.status(200).json({ message: `Welcome ${user.username}!` });
       } else {
-        res.status(401).json({ message: 'Invalid Credentials' });
+        res.status(401).json({ message: "Invalid Credentials" });
       }
     })
     .catch(error => {
@@ -44,7 +53,26 @@ server.post('/api/login', (req, res) => {
     });
 });
 
-server.get('/api/users', (req, res) => {
+function auth(req, res, next) {
+  console.log(req.headers);
+  const { username, password } = req.headers;
+  if (username && password) {
+    Users.findBy({ username })
+      .first()
+      .then(user => {
+        console.log(user);
+        if (user && bcrypt.compareSync(password, user.password)) next();
+        else res.status(403).json({ message: "forbidden" });
+      })
+      .catch(err => next(err));
+  } else {
+    res.status(400).json({ message: "Missing Credentials" });
+  }
+}
+
+server.get("/api/users", auth, (req, res) => {
+  //we should only send back if credentials valid
+
   Users.find()
     .then(users => {
       res.json(users);
