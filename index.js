@@ -4,7 +4,6 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 
 const session = require("express-session");
-
 const db = require("./database/dbConfig.js");
 const Users = require("./users/users-model.js");
 
@@ -14,9 +13,25 @@ server.use(helmet());
 server.use(express.json());
 server.use(cors());
 
-server.get("/", (req, res) => {
-  res.send("It's alive!");
-});
+//configure express-session middleware
+server.use(
+  session({
+    name: "notsession", // default is connect.sid
+    secret: "nobody tosses a dwarf!",
+    cookie: {
+      maxAge: 1 * 24 * 60 * 60 * 1000,
+      //https://medium.freecodecamp.org/how-to-get-https-working-on-your-local-development-environment-in-5-minutes-7af615770eec
+      secure: false // only set cookies over https. Server will not send back a cookie over http.
+    }, // 1 day in milliseconds
+    httpOnly: true, // don't let JS code access cookies. Browser extensions run JS code on your browser!
+    resave: false,
+    saveUninitialized: false
+  })
+);
+
+// server.get("/", (req, res) => {
+//   res.send("It's alive!");
+// });
 
 server.post("/api/register", (req, res) => {
   let user = req.body;
@@ -78,6 +93,54 @@ server.get("/api/users", auth, (req, res) => {
       res.json(users);
     })
     .catch(err => res.send(err));
+});
+
+function protected(req, res, next) {
+  if (req.session && req.session.userId) {
+    next();
+  } else {
+    res.status(401).json({ message: "you shall not pass!!" });
+  }
+}
+
+server.get("/", (req, res) => {
+  req.session.name = "Frodo";
+  req.session.userId = "9000";
+  res.send("got it");
+});
+
+server.get("/greet", protected, (req, res) => {
+  console.log(req.session);
+  const name = req.session.name;
+  res.send(`hello ${req.session.name}`);
+});
+
+// Access the session as req.session
+server.get("/views", protected, function(req, res, next) {
+  console.log(req.session);
+  if (req.session.views) {
+    req.session.views++;
+    res.setHeader("Content-Type", "text/html");
+    res.write("<p>views: " + req.session.views + "</p>");
+    res.write("<p>expires in: " + req.session.cookie.maxAge / 1000 + "s</p>");
+    res.end();
+  } else {
+    req.session.views = 1;
+    res.end("welcome to the session demo. refresh!");
+  }
+});
+
+//destroy sessions
+server.get("/logout", (req, res) => {
+  if (req.session) {
+    req.session.destroy(err => {
+      if (err) {
+        res.send("error logging out");
+      } else {
+        res.send("good bye");
+      }
+    });
+  }
 });
 
 const port = process.env.PORT || 5000;
